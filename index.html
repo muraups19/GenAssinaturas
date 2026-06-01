@@ -832,24 +832,45 @@ document.addEventListener('click', (e) => {
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzsMeSO7bVtJLX9mQMuRt9cdDKNStc-rAFdtOAKG8HoLrm4Lti0lt2S_qyRV0hjcOUECQ/exec';
 
 async function syncSheets() {
-  toast('Sincronizando...', '');
+  toast('Sincronizando com a planilha...', '');
+
+  // ── Assinaturas ──
   const exportSubs = DB.subscriptions.map(sub => ({
-    id: sub.id, nome: sub.name, valor: sub.value, inicio: sub.startMonth,
+    id: sub.id,
+    nome: sub.name,
+    icon: sub.icon || '💳',
+    valor: sub.value,
+    inicio: sub.startMonth,
     participantes: sub.participants.join(', ')
   }));
+
+  // ── Pagamentos: envia todos os status (Pago e Pendente) de todos os meses
   const exportPayments = [];
-  for (const key in DB.payments) {
-    if (DB.payments[key]) {
-      const parts = key.split('-');
-      const subId = parts[0];
-      const yyyy = parts[1], mm = parts[2];
-      const participant = parts.slice(3).join('-');
-      const sub = DB.subscriptions.find(s => s.id === subId);
-      exportPayments.push({ assinatura: sub ? sub.name : subId, mes: `${yyyy}-${mm}`, participante: participant, status: 'Pago' });
-    }
-  }
+  const { y: cy, m: cm } = currentYM();
+  const upTo = ymKey(cy, cm);
+
+  DB.subscriptions.forEach(sub => {
+    const months = getMonthsUpTo(upTo, sub.startMonth || null);
+    months.forEach(mk => {
+      sub.participants.forEach(p => {
+        const key = `${sub.id}-${mk}-${p}`;
+        exportPayments.push({
+          subId: sub.id,
+          assinatura: sub.name,
+          mes: mk,
+          participante: p,
+          status: DB.payments[key] ? 'Pago' : 'Pendente'
+        });
+      });
+    });
+  });
+
   try {
-    await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ assinaturas: exportSubs, pagamentos: exportPayments }) });
+    await fetch(GOOGLE_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ assinaturas: exportSubs, pagamentos: exportPayments })
+    });
     toast('Planilha atualizada!', 'success');
   } catch(e) { toast('Erro ao sincronizar', 'error'); }
 }
@@ -862,33 +883,32 @@ async function importFromSheets() {
     const data = await response.json();
 
     if (data.error) throw new Error(data.error);
-    if (!data.assinaturas) throw new Error('Resposta inválida da planilha');
+    if (!Array.isArray(data.assinaturas)) throw new Error('Resposta inválida da planilha');
 
     // ── Reconstruir subscriptions ──
     const subscriptions = data.assinaturas.map(row => ({
       id: row.id,
       name: row.nome,
-      icon: '💳',
+      icon: row.icon && row.icon.trim() ? row.icon.trim() : '💳',
       value: parseFloat(row.valor) || 0,
       startMonth: row.inicio || ymKey(currentYM().y, currentYM().m),
-      participants: row.participantes ? row.participantes.split(',').map(p => p.trim()).filter(Boolean) : []
+      participants: row.participantes
+        ? row.participantes.split(',').map(p => p.trim()).filter(Boolean)
+        : []
     }));
 
-    // ── Reconstruir payments ──
-    // A planilha só guarda pagamentos com status "Pago", precisamos recompor
-    // as chaves no formato: subId-YYYY-MM-participant
+    // ── Reconstruir payments usando subId direto da planilha ──
     const payments = {};
     data.pagamentos.forEach(row => {
-      if (row.status !== 'Pago') return;
-      // Encontrar a sub pelo nome (já que a planilha usa nome, não id)
-      const sub = subscriptions.find(s => s.name === row.assinatura);
-      if (!sub) return;
-      const key = `${sub.id}-${row.mes}-${row.participante}`;
-      payments[key] = true;
+      if (!row.subId || !row.mes || !row.participante) return;
+      const key = `${row.subId}-${row.mes}-${row.participante}`;
+      payments[key] = (row.status === 'Pago');
     });
 
     const total = subscriptions.length;
-    if (!confirm(`Importar dados da planilha?\n\n${total} assinatura(s) encontrada(s).\n\n⚠️ Os dados locais serão substituídos.`)) return;
+    const paidCount = Object.values(payments).filter(Boolean).length;
+
+    if (!confirm(`Importar dados da planilha?\n\n${total} assinatura(s)\n${paidCount} pagamentos registrados\n\n⚠️ Os dados locais serão substituídos.`)) return;
 
     DB = { subscriptions, payments };
     saveDB();
