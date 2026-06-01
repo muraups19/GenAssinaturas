@@ -506,9 +506,10 @@
 
 <!-- Dropdown Menu -->
 <div class="header-dropdown" id="header-dropdown">
-  <div class="dropdown-item" onclick="closeDropdown();document.getElementById('import-file-input').click()">⬆️ Importar backup</div>
-  <div class="dropdown-item" onclick="closeDropdown();exportJSON()">⬇️ Exportar backup</div>
-  <div class="dropdown-item green" onclick="closeDropdown();syncSheets()">📊 Sincronizar planilha</div>
+  <div class="dropdown-item" onclick="closeDropdown();document.getElementById('import-file-input').click()">⬆️ Importar backup JSON</div>
+  <div class="dropdown-item" onclick="closeDropdown();exportJSON()">⬇️ Exportar backup JSON</div>
+  <div class="dropdown-item green" onclick="closeDropdown();syncSheets()">📤 Enviar para planilha</div>
+  <div class="dropdown-item green" onclick="closeDropdown();importFromSheets()">📥 Importar da planilha</div>
 </div>
 <input type="file" id="import-file-input" accept=".json" onchange="importJSON(event)" />
 
@@ -851,6 +852,52 @@ async function syncSheets() {
     await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ assinaturas: exportSubs, pagamentos: exportPayments }) });
     toast('Planilha atualizada!', 'success');
   } catch(e) { toast('Erro ao sincronizar', 'error'); }
+}
+
+async function importFromSheets() {
+  toast('Buscando dados da planilha...', '');
+  try {
+    const response = await fetch(GOOGLE_SCRIPT_URL, { method: 'GET' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+
+    if (data.error) throw new Error(data.error);
+    if (!data.assinaturas) throw new Error('Resposta inválida da planilha');
+
+    // ── Reconstruir subscriptions ──
+    const subscriptions = data.assinaturas.map(row => ({
+      id: row.id,
+      name: row.nome,
+      icon: '💳',
+      value: parseFloat(row.valor) || 0,
+      startMonth: row.inicio || ymKey(currentYM().y, currentYM().m),
+      participants: row.participantes ? row.participantes.split(',').map(p => p.trim()).filter(Boolean) : []
+    }));
+
+    // ── Reconstruir payments ──
+    // A planilha só guarda pagamentos com status "Pago", precisamos recompor
+    // as chaves no formato: subId-YYYY-MM-participant
+    const payments = {};
+    data.pagamentos.forEach(row => {
+      if (row.status !== 'Pago') return;
+      // Encontrar a sub pelo nome (já que a planilha usa nome, não id)
+      const sub = subscriptions.find(s => s.name === row.assinatura);
+      if (!sub) return;
+      const key = `${sub.id}-${row.mes}-${row.participante}`;
+      payments[key] = true;
+    });
+
+    const total = subscriptions.length;
+    if (!confirm(`Importar dados da planilha?\n\n${total} assinatura(s) encontrada(s).\n\n⚠️ Os dados locais serão substituídos.`)) return;
+
+    DB = { subscriptions, payments };
+    saveDB();
+    renderAll();
+    toast(`${total} assinatura(s) importada(s) da planilha!`, 'success');
+  } catch(err) {
+    console.error('importFromSheets error:', err);
+    toast(`Erro ao importar: ${err.message}`, 'error');
+  }
 }
 
 function exportJSON() {
