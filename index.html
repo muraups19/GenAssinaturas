@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SplitSub — Assinaturas Compartilhadas</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --surface3: #222232;
+    --border: #2a2a40;
+    --accent: #7c6af7;
+    --accent2: #f7a26a;
+    --accent3: #6af7c8;
+    --danger: #f76a6a;
+    --warn: #f7d96a;
+    --text: #e8e8f0;
+    --text2: #9090b0;
+    --text3: #5a5a7a;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  /* NOISE OVERLAY */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; opacity: 0.3;
+  }
+
+  /* HEADER */
+  header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(10,10,15,0.85);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    display: flex; align-items: center; justify-content: space-between;
+    height: 64px;
+  }
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800; font-size: 1.4rem;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+  }
+  .logo span { color: var(--accent3); -webkit-text-fill-color: var(--accent3); }
+  .header-month {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem; color: var(--text2);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 6px 14px; border-radius: 20px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .month-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent3); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
+  .backup-btn {
+    font-family: 'DM Mono', monospace; font-size: 0.75rem;
+    padding: 6px 12px; border-radius: 20px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface2);
+    color: var(--text2); transition: all 0.15s; white-space: nowrap;
+  }
+  .backup-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .backup-btn.import:hover { border-color: var(--accent2); color: var(--accent2); }
+  #import-file-input { display: none; }
+
+  /* NAV TABS */
+  nav {
+    display: flex; gap: 4px;
+    padding: 1.5rem 2rem 0;
+  }
+  .tab-btn {
+    font-family: 'Syne', sans-serif; font-weight: 600; font-size: 0.85rem;
+    padding: 8px 18px; border-radius: 8px 8px 0 0;
+    border: 1px solid transparent; border-bottom: none;
+    cursor: pointer; transition: all 0.2s;
+    background: var(--surface); color: var(--text2);
+    letter-spacing: 0.3px;
+  }
+  .tab-btn:hover { color: var(--text); background: var(--surface2); }
+  .tab-btn.active {
+    background: var(--surface2); color: var(--text);
+    border-color: var(--border);
+  }
+
+  /* MAIN */
+  main {
+    max-width: 1200px; margin: 0 auto;
+    padding: 0 2rem 4rem;
+    position: relative; z-index: 1;
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* SECTION */
+  .section-header {
+    padding: 2rem 0 1.5rem;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 1rem;
+  }
+  .section-title {
+    font-family: 'Syne', sans-serif; font-weight: 700; font-size: 1.6rem;
+    letter-spacing: -0.5px;
+  }
+  .section-title span { color: var(--accent); }
+
+  /* CARDS */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    transition: border-color 0.2s, transform 0.2s;
+    position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    opacity: 0; transition: opacity 0.2s;
+  }
+  .card:hover { border-color: var(--border); transform: translateY(-2px); }
+  .card:hover::before { opacity: 1; }
+
+  .card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1rem; }
+  .card-icon {
+    width: 44px; height: 44px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+  }
+  .card-actions { display: flex; gap: 6px; }
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface2);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    color: var(--text2); font-size: 0.9rem; transition: all 0.15s;
+  }
+  .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .icon-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+  .card-name {
+    font-family: 'Syne', sans-serif; font-weight: 700; font-size: 1.1rem;
+    margin-bottom: 4px;
+  }
+  .card-price {
+    font-family: 'DM Mono', monospace; font-size: 1.4rem; font-weight: 500;
+    color: var(--accent3); margin-bottom: 1rem;
+  }
+  .card-price .currency { font-size: 0.85rem; color: var(--text2); }
+
+  .participants-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 1rem; }
+  .participant-chip {
+    font-size: 0.75rem; font-family: 'DM Mono', monospace;
+    padding: 4px 10px; border-radius: 20px;
+    border: 1px solid var(--border); background: var(--surface2);
+    color: var(--text2); cursor: default;
+    transition: all 0.15s;
+  }
+  .participant-chip.paid {
+    border-color: var(--accent3); color: var(--accent3);
+    background: rgba(106,247,200,0.08);
+  }
+  .participant-chip.unpaid {
+    border-color: var(--danger); color: var(--danger);
+    background: rgba(247,106,106,0.08);
+  }
+
+  .card-meta {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 1rem; border-top: 1px solid var(--border);
+    font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--text3);
+  }
+  .per-person { color: var(--accent2); font-weight: 500; }
+
+  /* STATS ROW */
+  .stats-row {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem; margin-bottom: 2rem;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+  }
+  .stat-label { font-size: 0.75rem; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .stat-value { font-family: 'DM Mono', monospace; font-size: 1.6rem; font-weight: 500; }
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.green { color: var(--accent3); }
+  .stat-value.orange { color: var(--accent2); }
+  .stat-value.red { color: var(--danger); }
+
+  /* BUTTONS */
+  .btn {
+    font-family: 'Syne', sans-serif; font-weight: 600; font-size: 0.85rem;
+    padding: 10px 20px; border-radius: var(--radius-sm);
+    border: none; cursor: pointer; transition: all 0.2s;
+    letter-spacing: 0.3px; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-primary {
+    background: var(--accent); color: #fff;
+  }
+  .btn-primary:hover { background: #9080ff; transform: translateY(-1px); box-shadow: 0 8px 24px rgba(124,106,247,0.3); }
+  .btn-secondary {
+    background: var(--surface2); color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger { background: rgba(247,106,106,0.15); color: var(--danger); border: 1px solid var(--danger); }
+  .btn-danger:hover { background: var(--danger); color: #fff; }
+  .btn-sm { padding: 6px 14px; font-size: 0.78rem; }
+  .btn-green { background: rgba(106,247,200,0.15); color: var(--accent3); border: 1px solid var(--accent3); }
+  .btn-green:hover { background: var(--accent3); color: #0a0a0f; }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+    display: none; align-items: center; justify-content: center;
+    padding: 1rem;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; width: 100%; max-width: 520px;
+    max-height: 90vh; overflow-y: auto;
+    animation: slideUp 0.2s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .modal-header {
+    padding: 1.5rem; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 1.1rem; }
+  .modal-body { padding: 1.5rem; }
+  .modal-footer { padding: 1.5rem; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* FORM */
+  .form-group { margin-bottom: 1.25rem; }
+  label { display: block; font-size: 0.8rem; color: var(--text2); margin-bottom: 6px; font-family: 'DM Mono', monospace; letter-spacing: 0.5px; }
+  input, select {
+    width: 100%; padding: 10px 14px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text);
+    font-family: 'DM Sans', sans-serif; font-size: 0.9rem;
+    transition: border-color 0.15s;
+    outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  input::placeholder { color: var(--text3); }
+  select option { background: var(--surface2); }
+
+  .participants-input-wrap {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 8px; background: var(--surface2); min-height: 46px;
+    align-items: center;
+  }
+  .p-tag {
+    background: var(--surface3); border: 1px solid var(--border);
+    border-radius: 20px; padding: 3px 10px;
+    font-family: 'DM Mono', monospace; font-size: 0.78rem;
+    display: flex; align-items: center; gap: 6px;
+    color: var(--text);
+  }
+  .p-tag button { background: none; border: none; cursor: pointer; color: var(--text3); font-size: 0.85rem; line-height: 1; }
+  .p-tag button:hover { color: var(--danger); }
+  .p-tag-input {
+    border: none; background: none; outline: none; color: var(--text);
+    font-family: 'DM Sans', sans-serif; font-size: 0.9rem; min-width: 80px; flex: 1;
+  }
+
+  /* DEBTORS TABLE */
+  .debtors-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+  .debtor-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.25rem;
+    position: relative; overflow: hidden;
+  }
+  .debtor-card::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, var(--danger), var(--accent2));
+  }
+  .debtor-name {
+    font-family: 'Syne', sans-serif; font-weight: 700; font-size: 1rem;
+    margin-bottom: 4px;
+  }
+  .debtor-total {
+    font-family: 'DM Mono', monospace; font-size: 1.5rem; color: var(--danger);
+    margin-bottom: 0.75rem;
+  }
+  .debtor-subs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 1rem; }
+  .debtor-sub-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.78rem; font-family: 'DM Mono', monospace;
+    color: var(--text2); padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .debtor-sub-row:last-child { border-bottom: none; }
+  .debtor-months {
+    font-size: 0.7rem; font-family: 'DM Mono', monospace;
+    padding: 2px 8px; border-radius: 20px;
+    background: rgba(247,106,106,0.15); color: var(--danger); border: 1px solid var(--danger);
+  }
+
+  /* PAYMENT TOGGLE */
+  .payment-month-selector {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .month-chip {
+    font-family: 'DM Mono', monospace; font-size: 0.78rem;
+    padding: 5px 14px; border-radius: 20px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text2);
+    transition: all 0.15s;
+  }
+  .month-chip.active { border-color: var(--accent); color: var(--accent); background: rgba(124,106,247,0.1); }
+
+  /* SUB PAYMENTS VIEW */
+  .sub-payment-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden;
+  }
+  .sub-payment-header {
+    padding: 1rem 1.25rem; background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .sub-payment-name { font-family: 'Syne', sans-serif; font-weight: 700; }
+  .sub-payment-rows { padding: 0.75rem 1.25rem; }
+  .payment-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+  }
+  .payment-row:last-child { border-bottom: none; }
+  .payment-row-name { font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+  .payment-row-amount { font-family: 'DM Mono', monospace; font-size: 0.85rem; color: var(--text2); }
+  .toggle-paid {
+    width: 42px; height: 22px; border-radius: 11px; border: none; cursor: pointer;
+    position: relative; transition: background 0.2s;
+    background: var(--surface3); border: 1px solid var(--border);
+  }
+  .toggle-paid.on { background: var(--accent3); border-color: var(--accent3); }
+  .toggle-paid::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    transition: transform 0.2s;
+  }
+  .toggle-paid.on::after { transform: translateX(20px); }
+
+  /* EXTRATO */
+  .extrato-preview {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 2rem; margin-top: 1.5rem;
+  }
+
+  /* EMPTY STATE */
+  .empty-state {
+    text-align: center; padding: 4rem 2rem;
+    color: var(--text3);
+  }
+  .empty-state .icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.5; }
+  .empty-state p { font-size: 0.9rem; }
+
+  /* TOAST */
+  .toast {
+    position: fixed; bottom: 2rem; right: 2rem; z-index: 9999;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 12px 18px;
+    font-size: 0.85rem; color: var(--text);
+    animation: toastIn 0.3s ease; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    display: none;
+  }
+  .toast.show { display: block; }
+  .toast.success { border-color: var(--accent3); color: var(--accent3); }
+  .toast.error { border-color: var(--danger); color: var(--danger); }
+  @keyframes toastIn { from{transform:translateY(10px);opacity:0} to{transform:none;opacity:1} }
+
+  /* EXTRATO PRINT */
+  #extrato-print-area {
+    width: 400px; background: #fff; color: #111;
+    font-family: 'DM Sans', sans-serif; padding: 0;
+    position: fixed; left: -9999px; top: 0;
+  }
+  .ep-header {
+    background: #7c6af7; color: #fff; padding: 24px 28px 20px;
+  }
+  .ep-logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.2rem; margin-bottom: 4px; }
+  .ep-sub { font-size: 0.75rem; opacity: 0.8; }
+  .ep-name { font-size: 1.5rem; font-family: 'Syne', sans-serif; font-weight: 700; margin: 12px 0 4px; }
+  .ep-period { font-size: 0.8rem; opacity: 0.8; }
+  .ep-body { padding: 20px 28px; }
+  .ep-total-box {
+    background: #fff3f0; border-radius: 8px; padding: 16px;
+    text-align: center; margin-bottom: 20px; border: 1px solid #f76a6a;
+  }
+  .ep-total-label { font-size: 0.75rem; color: #999; text-transform: uppercase; letter-spacing: 1px; }
+  .ep-total-value { font-family: 'DM Mono', monospace; font-size: 2rem; font-weight: 700; color: #f76a6a; }
+  .ep-section-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 0.85rem; color: #555; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .ep-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; }
+  .ep-row:last-child { border-bottom: none; }
+  .ep-row-label { color: #333; }
+  .ep-row-amount { font-family: 'DM Mono', monospace; color: #f76a6a; font-weight: 500; }
+  .ep-row-months { font-size: 0.75rem; color: #999; }
+  .ep-footer { background: #f8f8fc; padding: 16px 28px; font-size: 0.75rem; color: #999; text-align: center; border-top: 1px solid #eee; }
+
+  /* SELECT ALL */
+  .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .filter-label { font-family: 'DM Mono', monospace; font-size: 0.78rem; color: var(--text3); }
+
+  input[type="number"] { -moz-appearance: textfield; }
+  input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { display: none; }
+  input[type="month"] { color-scheme: dark; }
+  input[type="month"]::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
+
+  @media(max-width:600px) {
+    header { padding: 0 1rem; }
+    main { padding: 0 1rem 4rem; }
+    nav { padding: 1.5rem 1rem 0; }
+    .cards-grid, .debtors-grid { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Split<span>Sub</span></div>
+  <div class="header-actions">
+    <button class="backup-btn import" onclick="document.getElementById('import-file-input').click()" title="Importar backup JSON">⬆ Importar</button>
+    <button class="backup-btn" onclick="exportJSON()" title="Exportar backup JSON">⬇ Exportar</button>
+    <input type="file" id="import-file-input" accept=".json" onchange="importJSON(event)" />
+    <div class="header-month">
+      <div class="month-dot"></div>
+      <span id="current-month-label">—</span>
+    </div>
+  </div>
+</header>
+
+<nav>
+  <button class="tab-btn active" onclick="switchTab('dashboard')">📊 Dashboard</button>
+  <button class="tab-btn" onclick="switchTab('assinaturas')">💳 Assinaturas</button>
+  <button class="tab-btn" onclick="switchTab('pagamentos')">✅ Pagamentos</button>
+  <button class="tab-btn" onclick="switchTab('devedores')">⚠️ Devedores</button>
+  <button class="tab-btn" onclick="switchTab('extrato')">📄 Extrato</button>
+</nav>
+
+<div style="background:var(--surface2);border-bottom:1px solid var(--border);margin-bottom:0;">
+</div>
+
+<main>
+
+  <!-- DASHBOARD -->
+  <div id="tab-dashboard" class="tab-content active">
+    <div class="section-header">
+      <div class="section-title">Visão <span>Geral</span></div>
+      <div class="payment-month-selector" id="dash-month-selector" style="margin-bottom:0"></div>
+    </div>
+    <div class="stats-row" id="stats-row"></div>
+    <div class="section-title" style="margin-bottom:1rem;font-size:1.1rem">Assinaturas Ativas</div>
+    <div class="cards-grid" id="dash-cards"></div>
+  </div>
+
+  <!-- ASSINATURAS -->
+  <div id="tab-assinaturas" class="tab-content">
+    <div class="section-header">
+      <div class="section-title">Minhas <span>Assinaturas</span></div>
+      <button class="btn btn-primary" onclick="openModal('modal-new-sub')">＋ Nova Assinatura</button>
+    </div>
+    <div class="cards-grid" id="subs-list"></div>
+  </div>
+
+  <!-- PAGAMENTOS -->
+  <div id="tab-pagamentos" class="tab-content">
+    <div class="section-header">
+      <div class="section-title">Registro de <span>Pagamentos</span></div>
+    </div>
+    <div class="payment-month-selector" id="pay-month-selector"></div>
+    <div id="payment-cards"></div>
+  </div>
+
+  <!-- DEVEDORES -->
+  <div id="tab-devedores" class="tab-content">
+    <div class="section-header">
+      <div class="section-title">Saldo <span>Devedor</span></div>
+    </div>
+    <div class="payment-month-selector" id="debt-month-selector"></div>
+    <div class="debtors-grid" id="debtors-list"></div>
+  </div>
+
+  <!-- EXTRATO -->
+  <div id="tab-extrato" class="tab-content">
+    <div class="section-header">
+      <div class="section-title">Gerar <span>Extrato</span></div>
+    </div>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:1.5rem">
+      <div class="form-group" style="margin:0;flex:1;min-width:180px">
+        <label>Participante</label>
+        <select id="extrato-person" onchange="renderExtrato()">
+          <option value="">Selecione...</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;flex:1;min-width:180px">
+        <label>Mês de referência</label>
+        <select id="extrato-month" onchange="renderExtrato()"></select>
+      </div>
+      <button class="btn btn-primary" onclick="generateExtratoImage()">⬇ Baixar Imagem</button>
+    </div>
+    <div id="extrato-preview-wrap"></div>
+  </div>
+
+</main>
+
+<!-- MODAL: Nova Assinatura -->
+<div class="modal-overlay" id="modal-new-sub">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Nova Assinatura</div>
+      <button class="icon-btn" onclick="closeModal('modal-new-sub')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>NOME DO SERVIÇO</label>
+        <input type="text" id="sub-name" placeholder="Ex: Spotify, Netflix..." />
+      </div>
+      <div class="form-group">
+        <label>EMOJI / ÍCONE</label>
+        <input type="text" id="sub-icon" placeholder="🎵" maxlength="4" />
+      </div>
+      <div class="form-group">
+        <label>VALOR TOTAL (R$)</label>
+        <input type="number" id="sub-value" placeholder="49.90" step="0.01" min="0" />
+      </div>
+      <div class="form-group">
+        <label>MÊS DE INÍCIO DA COBRANÇA</label>
+        <input type="month" id="sub-start" />
+      </div>
+      <div class="form-group">
+        <label>PARTICIPANTES (aperte Enter para adicionar)</label>
+        <div class="participants-input-wrap" id="participants-wrap" onclick="document.getElementById('p-input').focus()">
+          <input class="p-tag-input" id="p-input" placeholder="Nome..." onkeydown="handleParticipantKey(event)" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-new-sub')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveSubscription()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Editar Assinatura -->
+<div class="modal-overlay" id="modal-edit-sub">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Editar Assinatura</div>
+      <button class="icon-btn" onclick="closeModal('modal-edit-sub')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-sub-id" />
+      <div class="form-group">
+        <label>NOME DO SERVIÇO</label>
+        <input type="text" id="edit-sub-name" />
+      </div>
+      <div class="form-group">
+        <label>EMOJI / ÍCONE</label>
+        <input type="text" id="edit-sub-icon" maxlength="4" />
+      </div>
+      <div class="form-group">
+        <label>VALOR TOTAL (R$)</label>
+        <input type="number" id="edit-sub-value" step="0.01" min="0" />
+      </div>
+      <div class="form-group">
+        <label>MÊS DE INÍCIO DA COBRANÇA</label>
+        <input type="month" id="edit-sub-start" />
+      </div>
+      <div class="form-group">
+        <label>PARTICIPANTES</label>
+        <div class="participants-input-wrap" id="edit-participants-wrap" onclick="document.getElementById('edit-p-input').focus()">
+          <input class="p-tag-input" id="edit-p-input" placeholder="Nome..." onkeydown="handleEditParticipantKey(event)" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-edit-sub')">Cancelar</button>
+      <button class="btn btn-primary" onclick="updateSubscription()">Atualizar</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- EXTRATO PRINT AREA -->
+<div id="extrato-print-area"></div>
+
+<script>
+// ─── DATA LAYER ───────────────────────────────────────────────────────────
+let DB = {
+  subscriptions: [], // { id, name, icon, value, participants: [] }
+  payments: {}       // { "subId-YYYY-MM-participant": true/false }
+};
+
+function loadDB() {
+  try {
+    const raw = localStorage.getItem('splitsub_db');
+    if (raw) DB = JSON.parse(raw);
+  } catch(e) {}
+}
+function saveDB() {
+  localStorage.setItem('splitsub_db', JSON.stringify(DB));
+}
+
+// ─── EXPORT / IMPORT ─────────────────────────────────────────────────────
+function exportJSON() {
+  const now = new Date();
+  const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+  const filename = `splitsub-backup-${stamp}.json`;
+  const blob = new Blob([JSON.stringify(DB, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  toast(`Backup exportado: ${filename}`, 'success');
+}
+
+function importJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.subscriptions || !data.payments) {
+        toast('Arquivo inválido — não é um backup do SplitSub', 'error');
+        return;
+      }
+      if (!confirm(`Importar backup?\n\n${data.subscriptions.length} assinatura(s) encontrada(s).\n\n⚠️ Os dados atuais serão substituídos.`)) return;
+      DB = data;
+      saveDB();
+      renderAll();
+      toast('Backup importado com sucesso!', 'success');
+    } catch(err) {
+      toast('Erro ao ler o arquivo JSON', 'error');
+    }
+    event.target.value = ''; // reset input para permitir reimportar mesmo arquivo
+  };
+  reader.readAsText(file);
+}
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+}
+
+// ─── MONTHS ───────────────────────────────────────────────────────────────
+const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const SHORT_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+function currentYM() {
+  const d = new Date();
+  return { y: d.getFullYear(), m: d.getMonth() };
+}
+function ymKey(y, m) {
+  return `${y}-${String(m+1).padStart(2,'0')}`;
+}
+function ymLabel(y, m) {
+  return `${MONTH_NAMES[m]} ${y}`;
+}
+
+// Generate last 6 months + current
+function getMonthOptions(count = 6) {
+  const months = [];
+  const d = new Date();
+  for (let i = 0; i < count; i++) {
+    months.unshift({ y: d.getFullYear(), m: d.getMonth(), key: ymKey(d.getFullYear(), d.getMonth()), label: `${SHORT_MONTHS[d.getMonth()]} ${d.getFullYear()}` });
+    d.setMonth(d.getMonth() - 1);
+  }
+  return months;
+}
+
+let selectedPayMonth = ymKey(currentYM().y, currentYM().m);
+let selectedDebtMonth = ymKey(currentYM().y, currentYM().m);
+let selectedDashMonth = ymKey(currentYM().y, currentYM().m);
+
+// ─── TABS ─────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.currentTarget.classList.add('active');
+  renderAll();
+}
+
+// ─── RENDER ALL ───────────────────────────────────────────────────────────
+function renderAll() {
+  renderDashboard();
+  renderSubsList();
+  renderPayments();
+  renderDebtors();
+  renderExtratoSelects();
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────
+function renderDashboard() {
+  // month selector
+  const opts = getMonthOptions(6);
+  const sel = document.getElementById('dash-month-selector');
+  sel.innerHTML = opts.map(o =>
+    `<div class="month-chip ${o.key === selectedDashMonth ? 'active' : ''}" onclick="selectedDashMonth='${o.key}';renderAll()">${o.label}</div>`
+  ).join('');
+
+  const subs = DB.subscriptions;
+  const [y, m] = selectedDashMonth.split('-').map(Number);
+  const month = m - 1;
+
+  // compute stats
+  let totalMonthly = 0, totalPaid = 0, totalUnpaid = 0, debtors = new Set();
+  subs.forEach(sub => {
+    totalMonthly += sub.value;
+    const share = sub.value / sub.participants.length;
+    sub.participants.forEach(p => {
+      const key = `${sub.id}-${selectedDashMonth}-${p}`;
+      if (DB.payments[key]) totalPaid += share;
+      else { totalUnpaid += share; debtors.add(p); }
+    });
+  });
+
+  document.getElementById('stats-row').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Assinaturas</div><div class="stat-value accent">${subs.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Total Mensal</div><div class="stat-value">${fmt(totalMonthly)}</div></div>
+    <div class="stat-card"><div class="stat-label">Recebido (${ymLabel(y, month)})</div><div class="stat-value green">${fmt(totalPaid)}</div></div>
+    <div class="stat-card"><div class="stat-label">Em Aberto</div><div class="stat-value red">${fmt(totalUnpaid)}</div></div>
+    <div class="stat-card"><div class="stat-label">Devedores</div><div class="stat-value orange">${debtors.size}</div></div>
+  `;
+
+  // cards
+  document.getElementById('dash-cards').innerHTML = subs.length ? subs.map(sub => renderSubCard(sub, true, selectedDashMonth)).join('') : `<div class="empty-state"><div class="icon">📭</div><p>Nenhuma assinatura cadastrada.<br>Vá em Assinaturas para começar.</p></div>`;
+}
+
+// ─── SUBS LIST ────────────────────────────────────────────────────────────
+function renderSubsList() {
+  const list = document.getElementById('subs-list');
+  list.innerHTML = DB.subscriptions.length
+    ? DB.subscriptions.map(sub => renderSubCard(sub, false)).join('')
+    : `<div class="empty-state"><div class="icon">💳</div><p>Nenhuma assinatura ainda.<br>Clique em "+ Nova Assinatura".</p></div>`;
+}
+
+function renderSubCard(sub, showPayStatus = false, monthKey = null) {
+  const mk = monthKey || selectedDashMonth;
+  const share = sub.value / sub.participants.length;
+  const paidChips = showPayStatus
+    ? sub.participants.map(p => {
+        const key = `${sub.id}-${mk}-${p}`;
+        const paid = DB.payments[key];
+        return `<span class="participant-chip ${paid ? 'paid' : 'unpaid'}" title="${paid ? 'Pago' : 'Pendente'}">${p} ${paid ? '✓' : '!'}</span>`;
+      }).join('')
+    : sub.participants.map(p => `<span class="participant-chip">${p}</span>`).join('');
+
+  const startLabel = sub.startMonth ? (() => {
+    const [sy, sm] = sub.startMonth.split('-').map(Number);
+    return `desde ${SHORT_MONTHS[sm-1]}/${sy}`;
+  })() : '';
+  return `<div class="card">
+    <div class="card-header">
+      <div class="card-icon">${sub.icon || '💳'}</div>
+      <div class="card-actions">
+        <button class="icon-btn" onclick="openEditModal('${sub.id}')" title="Editar">✏️</button>
+        <button class="icon-btn danger" onclick="deleteSub('${sub.id}')" title="Excluir">🗑</button>
+      </div>
+    </div>
+    <div class="card-name">${sub.name}</div>
+    <div class="card-price"><span class="currency">R$ </span>${sub.value.toFixed(2).replace('.',',')}</div>
+    <div class="participants-list">${paidChips}</div>
+    <div class="card-meta">
+      <span>${sub.participants.length} participante${sub.participants.length !== 1 ? 's' : ''}</span>
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+        <span class="per-person">R$ ${share.toFixed(2).replace('.',',')} / pessoa</span>
+        ${startLabel ? `<span style="font-family:'DM Mono',monospace;font-size:0.68rem;color:var(--text3)">${startLabel}</span>` : ''}
+      </span>
+    </div>
+  </div>`;
+}
+
+// ─── PAYMENTS ────────────────────────────────────────────────────────────
+function renderPayments() {
+  const opts = getMonthOptions(6);
+  const sel = document.getElementById('pay-month-selector');
+  sel.innerHTML = `<span class="filter-label">Mês:</span>` + opts.map(o =>
+    `<div class="month-chip ${o.key === selectedPayMonth ? 'active' : ''}" onclick="selectedPayMonth='${o.key}';renderPayments()">${o.label}</div>`
+  ).join('');
+
+  const container = document.getElementById('payment-cards');
+  if (!DB.subscriptions.length) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">✅</div><p>Nenhuma assinatura cadastrada.</p></div>`;
+    return;
+  }
+
+  container.innerHTML = DB.subscriptions.map(sub => {
+    // Skip months before subscription start
+    if (sub.startMonth && selectedPayMonth < sub.startMonth) {
+      const [sy, sm] = sub.startMonth.split('-').map(Number);
+      return `<div class="sub-payment-card">
+        <div class="sub-payment-header">
+          <span class="sub-payment-name">${sub.icon || '💳'} ${sub.name}</span>
+          <span style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text3)">inicia em ${SHORT_MONTHS[sm-1]}/${sy}</span>
+        </div>
+      </div>`;
+    }
+    const share = sub.value / sub.participants.length;
+    const rows = sub.participants.map(p => {
+      const key = `${sub.id}-${selectedPayMonth}-${p}`;
+      const paid = !!DB.payments[key];
+      return `<div class="payment-row">
+        <span class="payment-row-name">
+          <span>${p}</span>
+        </span>
+        <span class="payment-row-amount">${fmt(share)}</span>
+        <button class="toggle-paid ${paid ? 'on' : ''}" onclick="togglePayment('${sub.id}','${selectedPayMonth}','${p}')" title="${paid ? 'Clique para desmarcar' : 'Clique para marcar como pago'}"></button>
+      </div>`;
+    }).join('');
+
+    const paidCount = sub.participants.filter(p => DB.payments[`${sub.id}-${selectedPayMonth}-${p}`]).length;
+    return `<div class="sub-payment-card">
+      <div class="sub-payment-header">
+        <span class="sub-payment-name">${sub.icon || '💳'} ${sub.name}</span>
+        <span style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text2)">${paidCount}/${sub.participants.length} pagos</span>
+      </div>
+      <div class="sub-payment-rows">${rows}</div>
+    </div>`;
+  }).join('');
+}
+
+function togglePayment(subId, monthKey, person) {
+  const key = `${subId}-${monthKey}-${person}`;
+  DB.payments[key] = !DB.payments[key];
+  saveDB();
+  renderAll();
+  toast(DB.payments[key] ? `${person} marcado como pago ✓` : `${person} desmarcado`, DB.payments[key] ? 'success' : '');
+}
+
+// ─── DEBTORS ─────────────────────────────────────────────────────────────
+function renderDebtors() {
+  const opts = getMonthOptions(6);
+  const sel = document.getElementById('debt-month-selector');
+  sel.innerHTML = `<span class="filter-label">Até o mês:</span>` + opts.map(o =>
+    `<div class="month-chip ${o.key === selectedDebtMonth ? 'active' : ''}" onclick="selectedDebtMonth='${o.key}';renderDebtors()">${o.label}</div>`
+  ).join('');
+
+  const debtMap = computeDebts(selectedDebtMonth);
+  const container = document.getElementById('debtors-list');
+  const entries = Object.entries(debtMap).filter(([, d]) => d.total > 0);
+  if (!entries.length) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">🎉</div><p>Nenhum devedor até este mês!</p></div>`;
+    return;
+  }
+  container.innerHTML = entries.sort((a,b) => b[1].total - a[1].total).map(([name, d]) => {
+    const subRows = d.subs.map(s =>
+      `<div class="debtor-sub-row"><span>${s.icon} ${s.name}</span><span>${fmt(s.amount)} <span class="debtor-months">${s.months}m</span></span></div>`
+    ).join('');
+    return `<div class="debtor-card">
+      <div class="debtor-name">👤 ${name}</div>
+      <div class="debtor-total">${fmt(d.total)}</div>
+      <div class="debtor-subs">${subRows}</div>
+      <button class="btn btn-sm btn-secondary" onclick="goExtrato('${name}')">📄 Ver Extrato</button>
+    </div>`;
+  }).join('');
+}
+
+function computeDebts(upToMonthKey) {
+  const debtMap = {};
+
+  DB.subscriptions.forEach(sub => {
+    const allMonths = getMonthsUpTo(upToMonthKey, sub.startMonth || null);
+    const share = sub.value / sub.participants.length;
+    sub.participants.forEach(p => {
+      let unpaidMonths = 0;
+      allMonths.forEach(mk => {
+        const key = `${sub.id}-${mk}-${p}`;
+        if (!DB.payments[key]) unpaidMonths++;
+      });
+      if (unpaidMonths > 0) {
+        if (!debtMap[p]) debtMap[p] = { total: 0, subs: [] };
+        debtMap[p].total += share * unpaidMonths;
+        debtMap[p].subs.push({ name: sub.name, icon: sub.icon || '💳', amount: share * unpaidMonths, months: unpaidMonths });
+      }
+    });
+  });
+  return debtMap;
+}
+
+function getMonthsUpTo(upToKey, startKey = null) {
+  // Returns all months from startKey (or 12 months back) up to upToKey
+  const [uy, um] = upToKey.split('-').map(Number);
+  const endDate = new Date(uy, um - 1, 1);
+
+  let startDate;
+  if (startKey) {
+    const [sy, sm] = startKey.split('-').map(Number);
+    startDate = new Date(sy, sm - 1, 1);
+  } else {
+    startDate = new Date(endDate);
+    startDate.setMonth(startDate.getMonth() - 11); // default: 12 months
+  }
+
+  const months = [];
+  const d = new Date(startDate);
+  while (d <= endDate) {
+    months.push(ymKey(d.getFullYear(), d.getMonth()));
+    d.setMonth(d.getMonth() + 1);
+  }
+  return months;
+}
+
+// ─── EXTRATO ─────────────────────────────────────────────────────────────
+function renderExtratoSelects() {
+  // person selector
+  const persons = getAllPersons();
+  const pSel = document.getElementById('extrato-person');
+  const curP = pSel.value;
+  pSel.innerHTML = '<option value="">Selecione...</option>' + persons.map(p => `<option value="${p}" ${p===curP?'selected':''}>${p}</option>`).join('');
+
+  // month selector
+  const opts = getMonthOptions(6);
+  const mSel = document.getElementById('extrato-month');
+  const curM = mSel.value || selectedDebtMonth;
+  mSel.innerHTML = opts.map(o => `<option value="${o.key}" ${o.key===curM?'selected':''}>${o.label.replace(o.key.split('-')[0],'').trim() || o.label} — ${o.label}</option>`).join('');
+  if (!mSel.value) mSel.value = selectedDebtMonth;
+}
+
+function renderExtrato() {
+  const person = document.getElementById('extrato-person').value;
+  const monthKey = document.getElementById('extrato-month').value;
+  const wrap = document.getElementById('extrato-preview-wrap');
+  if (!person || !monthKey) { wrap.innerHTML = ''; return; }
+
+  const html = buildExtratoHTML(person, monthKey);
+  wrap.innerHTML = `<div class="extrato-preview">${html}</div>`;
+}
+
+function buildExtratoHTML(person, upToMonthKey) {
+  const allMonths = getMonthsUpTo(upToMonthKey);
+  const [y, m] = upToMonthKey.split('-').map(Number);
+  const monthLabel = ymLabel(y, m - 1);
+
+  let rows = '';
+  let total = 0;
+
+  DB.subscriptions.forEach(sub => {
+    if (!sub.participants.includes(person)) return;
+    const subMonths = getMonthsUpTo(upToMonthKey, sub.startMonth || null);
+    const share = sub.value / sub.participants.length;
+    let unpaidMonths = 0;
+    subMonths.forEach(mk => {
+      const key = `${sub.id}-${mk}-${person}`;
+      if (!DB.payments[key]) unpaidMonths++;
+    });
+    if (unpaidMonths > 0) {
+      const amount = share * unpaidMonths;
+      total += amount;
+      rows += `<div class="ep-row"><span class="ep-row-label">${sub.icon || '💳'} ${sub.name}<br><span class="ep-row-months">${unpaidMonths} mês(es) × R$${share.toFixed(2).replace('.',',')}</span></span><span class="ep-row-amount">${fmt(amount)}</span></div>`;
+    }
+  });
+
+  if (!rows) {
+    return `<div style="text-align:center;padding:2rem;color:var(--accent3)">✅ <strong>${person}</strong> não possui débitos até ${monthLabel}!</div>`;
+  }
+
+  return `<div style="font-family:'DM Sans',sans-serif">
+    <div style="background:linear-gradient(135deg,#7c6af7,#f7a26a);padding:24px 28px;border-radius:12px 12px 0 0;color:#fff">
+      <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:1.2rem">SplitSub</div>
+      <div style="font-size:0.75rem;opacity:0.8">Extrato de Débitos</div>
+      <div style="font-size:1.5rem;font-family:'Syne',sans-serif;font-weight:700;margin:12px 0 4px">👤 ${person}</div>
+      <div style="font-size:0.8rem;opacity:0.8">Referência: ${monthLabel}</div>
+    </div>
+    <div style="padding:20px 28px;background:#fff;color:#111;border-radius:0 0 12px 12px">
+      <div style="background:#fff3f0;border-radius:8px;padding:16px;text-align:center;margin-bottom:20px;border:1px solid #f76a6a">
+        <div style="font-size:0.75rem;color:#999;text-transform:uppercase;letter-spacing:1px">Total Devido</div>
+        <div style="font-family:'DM Mono',monospace;font-size:2rem;font-weight:700;color:#f76a6a">${fmt(total)}</div>
+      </div>
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:0.85rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Detalhamento</div>
+      ${rows}
+      <div style="background:#f8f8fc;padding:12px 0 0;margin-top:12px;font-size:0.75rem;color:#999;text-align:center;border-top:1px solid #eee">
+        Gerado por SplitSub em ${new Date().toLocaleDateString('pt-BR')}
+      </div>
+    </div>
+  </div>`;
+}
+
+async function generateExtratoImage() {
+  const person = document.getElementById('extrato-person').value;
+  const monthKey = document.getElementById('extrato-month').value;
+  if (!person || !monthKey) { toast('Selecione participante e mês', 'error'); return; }
+
+  const area = document.getElementById('extrato-print-area');
+  const [y, m] = monthKey.split('-').map(Number);
+  const allMonths = getMonthsUpTo(monthKey);
+
+  let rows = '';
+  let total = 0;
+  DB.subscriptions.forEach(sub => {
+    if (!sub.participants.includes(person)) return;
+    const subMonths = getMonthsUpTo(monthKey, sub.startMonth || null);
+    const share = sub.value / sub.participants.length;
+    let unpaidMonths = 0;
+    subMonths.forEach(mk => {
+      const key = `${sub.id}-${mk}-${person}`;
+      if (!DB.payments[key]) unpaidMonths++;
+    });
+    if (unpaidMonths > 0) {
+      const amount = share * unpaidMonths;
+      total += amount;
+      rows += `<div class="ep-row"><span class="ep-row-label">${sub.icon || '💳'} ${sub.name}<br><span class="ep-row-months">${unpaidMonths} mês(es) × R$${share.toFixed(2).replace('.',',')}</span></span><span class="ep-row-amount">${fmt(amount)}</span></div>`;
+    }
+  });
+
+  area.innerHTML = `
+    <div style="width:400px;background:#fff;font-family:'DM Sans',sans-serif">
+      <div class="ep-header">
+        <div class="ep-logo">SplitSub</div>
+        <div class="ep-sub">Extrato de Débitos</div>
+        <div class="ep-name">👤 ${person}</div>
+        <div class="ep-period">Referência: ${ymLabel(y, m-1)}</div>
+      </div>
+      <div class="ep-body">
+        <div class="ep-total-box">
+          <div class="ep-total-label">Total Devido</div>
+          <div class="ep-total-value">${fmt(total)}</div>
+        </div>
+        <div class="ep-section-title">Detalhamento</div>
+        ${rows || '<div style="color:#999;font-size:0.85rem;text-align:center;padding:12px 0">Nenhum débito encontrado</div>'}
+      </div>
+      <div class="ep-footer">Gerado por SplitSub · ${new Date().toLocaleDateString('pt-BR')}</div>
+    </div>
+  `;
+  area.style.left = '-9999px';
+  area.style.position = 'fixed';
+
+  await new Promise(r => setTimeout(r, 100));
+
+  try {
+    const canvas = await html2canvas(area, { scale: 2, backgroundColor: '#fff', useCORS: true });
+    const link = document.createElement('a');
+    link.download = `extrato-${person.toLowerCase().replace(/\s+/g,'-')}-${monthKey}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    toast(`Extrato de ${person} baixado!`, 'success');
+  } catch(e) {
+    toast('Erro ao gerar imagem', 'error');
+  }
+  area.innerHTML = '';
+}
+
+function goExtrato(person) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+    if (b.textContent.includes('Extrato')) { b.click(); }
+  });
+  setTimeout(() => {
+    document.getElementById('extrato-person').value = person;
+    document.getElementById('extrato-month').value = selectedDebtMonth;
+    renderExtrato();
+  }, 50);
+}
+
+// ─── SUBSCRIPTION CRUD ────────────────────────────────────────────────────
+let newParticipants = [];
+let editParticipants = [];
+
+function handleParticipantKey(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = e.target.value.trim();
+    if (val && !newParticipants.includes(val)) {
+      newParticipants.push(val);
+      renderParticipantTags('participants-wrap', newParticipants, 'new');
+    }
+    e.target.value = '';
+  }
+}
+function handleEditParticipantKey(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = e.target.value.trim();
+    if (val && !editParticipants.includes(val)) {
+      editParticipants.push(val);
+      renderParticipantTags('edit-participants-wrap', editParticipants, 'edit');
+    }
+    e.target.value = '';
+  }
+}
+
+function renderParticipantTags(wrapId, arr, mode) {
+  const wrap = document.getElementById(wrapId);
+  const inputId = mode === 'new' ? 'p-input' : 'edit-p-input';
+  wrap.innerHTML = arr.map((p,i) =>
+    `<span class="p-tag">${p}<button onclick="removeParticipant(${i},'${mode}')" type="button">×</button></span>`
+  ).join('') + `<input class="p-tag-input" id="${inputId}" placeholder="Nome..." onkeydown="handle${mode==='new'?'P':'EditP'}articipantKey(event)" />`;
+  document.getElementById(inputId).focus();
+}
+
+function removeParticipant(idx, mode) {
+  if (mode === 'new') newParticipants.splice(idx, 1), renderParticipantTags('participants-wrap', newParticipants, 'new');
+  else editParticipants.splice(idx, 1), renderParticipantTags('edit-participants-wrap', editParticipants, 'edit');
+}
+
+function saveSubscription() {
+  const name = document.getElementById('sub-name').value.trim();
+  const icon = document.getElementById('sub-icon').value.trim() || '💳';
+  const value = parseFloat(document.getElementById('sub-value').value);
+  const startMonth = document.getElementById('sub-start').value || ymKey(currentYM().y, currentYM().m);
+  const input = document.getElementById('p-input').value.trim();
+  if (input && !newParticipants.includes(input)) newParticipants.push(input);
+
+  if (!name) { toast('Informe o nome do serviço', 'error'); return; }
+  if (isNaN(value) || value <= 0) { toast('Informe um valor válido', 'error'); return; }
+  if (!newParticipants.length) { toast('Adicione ao menos um participante', 'error'); return; }
+
+  DB.subscriptions.push({ id: genId(), name, icon, value, startMonth, participants: [...newParticipants] });
+  saveDB(); renderAll();
+  closeModal('modal-new-sub');
+  toast(`${name} cadastrado!`, 'success');
+}
+
+function openEditModal(id) {
+  const sub = DB.subscriptions.find(s => s.id === id);
+  if (!sub) return;
+  document.getElementById('edit-sub-id').value = id;
+  document.getElementById('edit-sub-name').value = sub.name;
+  document.getElementById('edit-sub-icon').value = sub.icon;
+  document.getElementById('edit-sub-value').value = sub.value;
+  document.getElementById('edit-sub-start').value = sub.startMonth || ymKey(currentYM().y, currentYM().m);
+  editParticipants = [...sub.participants];
+  renderParticipantTags('edit-participants-wrap', editParticipants, 'edit');
+  openModal('modal-edit-sub');
+}
+
+function updateSubscription() {
+  const id = document.getElementById('edit-sub-id').value;
+  const name = document.getElementById('edit-sub-name').value.trim();
+  const icon = document.getElementById('edit-sub-icon').value.trim() || '💳';
+  const value = parseFloat(document.getElementById('edit-sub-value').value);
+  const startMonth = document.getElementById('edit-sub-start').value || ymKey(currentYM().y, currentYM().m);
+  const input = document.getElementById('edit-p-input').value.trim();
+  if (input && !editParticipants.includes(input)) editParticipants.push(input);
+
+  if (!name || isNaN(value) || value <= 0 || !editParticipants.length) { toast('Preencha todos os campos', 'error'); return; }
+
+  const idx = DB.subscriptions.findIndex(s => s.id === id);
+  DB.subscriptions[idx] = { ...DB.subscriptions[idx], name, icon, value, startMonth, participants: [...editParticipants] };
+  saveDB(); renderAll();
+  closeModal('modal-edit-sub');
+  toast('Assinatura atualizada!', 'success');
+}
+
+function deleteSub(id) {
+  if (!confirm('Excluir esta assinatura? Os dados de pagamento também serão removidos.')) return;
+  DB.subscriptions = DB.subscriptions.filter(s => s.id !== id);
+  // clean payments
+  Object.keys(DB.payments).forEach(k => { if (k.startsWith(id)) delete DB.payments[k]; });
+  saveDB(); renderAll();
+  toast('Assinatura removida', '');
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────
+function getAllPersons() {
+  const set = new Set();
+  DB.subscriptions.forEach(s => s.participants.forEach(p => set.add(p)));
+  return [...set].sort();
+}
+
+function fmt(v) {
+  return `R$ ${v.toFixed(2).replace('.',',')}`;
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  if (id === 'modal-new-sub') {
+    newParticipants = [];
+    document.getElementById('sub-name').value = '';
+    document.getElementById('sub-icon').value = '';
+    document.getElementById('sub-value').value = '';
+    document.getElementById('sub-start').value = '';
+    document.getElementById('participants-wrap').innerHTML = `<input class="p-tag-input" id="p-input" placeholder="Nome..." onkeydown="handleParticipantKey(event)" />`;
+  }
+}
+
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────
+loadDB();
+const { y, m } = currentYM();
+document.getElementById('current-month-label').textContent = `${MONTH_NAMES[m]} ${y}`;
+renderAll();
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
+});
+</script>
+</body>
+</html>
