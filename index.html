@@ -885,15 +885,32 @@ async function importFromSheets() {
     if (data.error) throw new Error(data.error);
     if (!Array.isArray(data.assinaturas)) throw new Error('Resposta inválida — verifique o Apps Script');
 
+    // Debug: log all field names received
+    if (data.assinaturas.length > 0) {
+      console.log('[SplitSub] Campos recebidos:', Object.keys(data.assinaturas[0]));
+      console.log('[SplitSub] Primeira assinatura raw:', JSON.stringify(data.assinaturas[0]));
+    }
+
     // ── Reconstruir subscriptions ──────────────────────────────────────
-    const subscriptions = data.assinaturas.map(row => ({
-      id:           String(row.id || '').trim(),
-      name:         String(row.nome || '').trim(),
-      icon:         String(row.icon || '💳').trim() || '💳',
-      value:        parseFloat(String(row.valor ?? '0').replace(',', '.')) || 0,
-      startMonth:   String(row.inicio || '').trim() || ymKey(currentYM().y, currentYM().m),
-      participants: String(row.participantes || '').split(',').map(p => p.trim()).filter(Boolean)
-    })).filter(s => s.id && s.name);
+    const subscriptions = data.assinaturas.map(row => {
+      // Tenta todos os possíveis nomes para o campo valor
+      const rawValor = row.valor ?? row['valor total (r$)'] ?? row['valor total'] ?? row.value ?? null;
+      // Converte: pode ser número JS direto, string "40.9", string "40,9", ou null
+      let value = 0;
+      if (rawValor !== null && rawValor !== undefined && rawValor !== '') {
+        value = parseFloat(String(rawValor).replace(',', '.')) || 0;
+      }
+      console.log(`[SplitSub] ${row.nome}: rawValor=${JSON.stringify(rawValor)} → ${value}`);
+
+      return {
+        id:           String(row.id || '').trim(),
+        name:         String(row.nome || '').trim(),
+        icon:         String(row.icon || '💳').trim() || '💳',
+        value,
+        startMonth:   String(row.inicio || '').trim() || ymKey(currentYM().y, currentYM().m),
+        participants: String(row.participantes || '').split(',').map(p => p.trim()).filter(Boolean)
+      };
+    }).filter(s => s.id && s.name);
 
     // ── Reconstruir payments ────────────────────────────────────────────
     const payments = {};
