@@ -875,6 +875,22 @@ async function syncSheets() {
   } catch(e) { toast('Erro ao sincronizar', 'error'); }
 }
 
+// ─── Utilitário: parse seguro de mês ─────────────────────────────────────
+function parseMonthKey(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  // Formato YYYY-MM ou YYYY-MM-DD
+  const m = s.match(/^(\d{4})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}`;
+  // Número serial do Google Sheets (dias desde 1899-12-30)
+  const n = parseFloat(s);
+  if (!isNaN(n) && n > 40000) {
+    const d = new Date((n - 25569) * 86400 * 1000);
+    return ymKey(d.getFullYear(), d.getMonth());
+  }
+  return null;
+}
+
 async function importFromSheets() {
   toast('Buscando dados da planilha...', '');
   try {
@@ -885,79 +901,90 @@ async function importFromSheets() {
     if (data.error) throw new Error(data.error);
     if (!Array.isArray(data.assinaturas)) throw new Error('Resposta inválida da planilha');
 
-    // ── Reconstruir subscriptions ──
-    // Compatível com formato antigo (5 cols: id,nome,valor,inicio,participantes)
-    // e novo (6 cols: id,nome,icon,valor,inicio,participantes)
+    console.log('[SplitSub] Raw sheet data:', JSON.stringify(data.assinaturas[0]));
+
+    // ── Detectar formato da planilha ──────────────────────────────────────
+    // Formato ANTIGO: { id, nome, valor, inicio, participantes }          (5 campos, sem icon/subId)
+    // Formato NOVO:   { id, nome, icon, valor, inicio, participantes }    (6 campos, com icon)
+    // Detectamos pelo campo "icon": se existir E tiver valor numérico em "nome", é sinal de deslocamento
+    const sample = data.assinaturas[0] || {};
+    // No formato antigo o doGet mapeia: r[2]=valor, r[3]=inicio, r[4]=participantes
+    // No formato novo: r[2]=icon, r[3]=valor, r[4]=inicio, r[5]=participantes
+    // A forma mais segura: verificar se "valor" é realmente número
+    const isOldFormat = !sample.icon ||
+      (parseFloat(String(sample.icon).replace(',','.')) > 0); // icon contém número = deslocamento
+
+    console.log('[SplitSub] Sheet format detected:', isOldFormat ? 'OLD (5 cols)' : 'NEW (6 cols)');
+
+    // ── Reconstruir subscriptions ─────────────────────────────────────────
     const subscriptions = data.assinaturas.map(row => {
-      // Detecta se tem campo icon (novo formato) ou não (antigo)
-      const hasIcon = row.icon !== undefined && row.icon !== null;
-      const rawValue = hasIcon ? row.valor : row.valor;
-      const rawStart = hasIcon ? row.inicio : row.inicio;
+      let rawValor, rawInicio, rawParticipantes, rawIcon;
 
-      // Parse valor: aceita número, string "40.9", string "40,9"
-      let valor = 0;
-      if (rawValue !== undefined && rawValue !== '') {
-        valor = parseFloat(String(rawValue).replace(',', '.')) || 0;
+      if (isOldFormat) {
+        // { id, nome, valor, inicio, participantes }
+        rawIcon        = '💳';
+        rawValor       = row.valor ?? row.icon; // doGet antigo colocava valor em row.valor
+        rawInicio      = row.inicio ?? row.nome; // fallback
+        rawParticipantes = row.participantes;
+      } else {
+        // { id, nome, icon, valor, inicio, participantes }
+        rawIcon        = row.icon;
+        rawValor       = row.valor;
+        rawInicio      = row.inicio;
+        rawParticipantes = row.participantes;
       }
 
-      // Parse startMonth: deve ser "YYYY-MM", ex: "2026-02"
-      // Às vezes o Sheets devolve como "2026-02-01" (data completa) ou número serial
-      let startMonth = ymKey(currentYM().y, currentYM().m);
-      if (rawStart) {
-        const s = String(rawStart).trim();
-        // Formato YYYY-MM ou YYYY-MM-DD
-        const match = s.match(/^(\d{4})-(\d{2})/);
-        if (match) {
-          startMonth = `${match[1]}-${match[2]}`;
-        }
-      }
+      const valor = parseFloat(String(rawValor ?? '').replace(',', '.')) || 0;
+      const startMonth = parseMonthKey(rawInicio) || ymKey(currentYM().y, currentYM().m);
+      const icon = (rawIcon && String(rawIcon).trim() && !/^\d/.test(String(rawIcon))) ? String(rawIcon).trim() : '💳';
 
       return {
         id: String(row.id || '').trim(),
         name: String(row.nome || '').trim(),
-        icon: (hasIcon && row.icon && String(row.icon).trim()) ? String(row.icon).trim() : '💳',
+        icon,
         value: valor,
         startMonth,
-        participants: row.participantes
-          ? String(row.participantes).split(',').map(p => p.trim()).filter(Boolean)
+        participants: rawParticipantes
+          ? String(rawParticipantes).split(',').map(p => p.trim()).filter(Boolean)
           : []
       };
-    }).filter(s => s.id && s.name); // descarta linhas vazias
+    }).filter(s => s.id && s.name);
 
-    // ── Reconstruir payments ──
-    // Novo formato tem subId; antigo não tem → tenta casar pelo nome
+    // ── Reconstruir payments ──────────────────────────────────────────────
     const payments = {};
-    data.pagamentos.forEach(row => {
+    (data.pagamentos || []).forEach(row => {
+      // Tenta subId direto (novo formato)
       let subId = row.subId ? String(row.subId).trim() : null;
 
-      // Fallback: busca pelo nome da assinatura
-      if (!subId && row.assinatura) {
-        const found = subscriptions.find(s => s.name === String(row.assinatura).trim());
+      // Fallback: busca pelo nome da assinatura (formato antigo)
+      if (!subId || subId === '') {
+        const found = subscriptions.find(s => s.name === String(row.assinatura || '').trim());
         if (found) subId = found.id;
       }
-      if (!subId || !row.mes || !row.participante) return;
+      if (!subId) return;
 
-      // Normaliza mês para YYYY-MM
-      const mesRaw = String(row.mes).trim();
-      const mesMatch = mesRaw.match(/^(\d{4})-(\d{2})/);
-      if (!mesMatch) return;
-      const mes = `${mesMatch[1]}-${mesMatch[2]}`;
+      const mes = parseMonthKey(row.mes);
+      if (!mes) return;
 
-      const key = `${subId}-${mes}-${String(row.participante).trim()}`;
-      payments[key] = (String(row.status).trim() === 'Pago');
+      const participante = String(row.participante || '').trim();
+      if (!participante) return;
+
+      const key = `${subId}-${mes}-${participante}`;
+      payments[key] = (String(row.status || '').trim() === 'Pago');
     });
 
     const total = subscriptions.length;
     const paidCount = Object.values(payments).filter(Boolean).length;
+    const preview = subscriptions.map(s => `• ${s.name} — R$${s.value.toFixed(2)} — ${s.startMonth}`).join('\n');
 
-    if (!confirm(`Importar dados da planilha?\n\n✅ ${total} assinatura(s) encontrada(s)\n💰 ${paidCount} pagamento(s) registrado(s)\n\n⚠️ Os dados locais serão substituídos.`)) return;
+    if (!confirm(`Importar dados da planilha?\n\n${preview}\n\n💰 ${paidCount} pagamento(s) registrado(s)\n\n⚠️ Os dados locais serão substituídos.`)) return;
 
     DB = { subscriptions, payments };
     saveDB();
     renderAll();
     toast(`${total} assinatura(s) importada(s)!`, 'success');
   } catch(err) {
-    console.error('importFromSheets error:', err);
+    console.error('[SplitSub] importFromSheets error:', err);
     toast(`Erro ao importar: ${err.message}`, 'error');
   }
 }
